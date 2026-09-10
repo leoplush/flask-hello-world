@@ -79,6 +79,9 @@ def monitor_trade(trade_id, action, entry_price, initial_units, be_pips, tp1_pip
         if be_triggered and tp1_triggered:
             break
 
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "online", "message": "Bot LEO FX Activo"}), 200
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(force=True)
