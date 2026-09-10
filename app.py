@@ -10,8 +10,7 @@ app = Flask(__name__)
 # --- CONFIGURACIÓN DE CREDENCIALES OANDA ---
 OANDA_ACCOUNT_ID = os.environ.get("OANDA_ACCOUNT_ID", "101-001-20711675-001")
 OANDA_API_KEY = os.environ.get("OANDA_API_KEY")
-OANDA_URL = os.environ.get("OANDA_URL", "https://api-fxpractice.oanda.com")
-
+OANDA_URL = os.environ.get("OANDA_URL", "https://api-fxtrade.oanda.com")
 HEADERS = {
     "Authorization": f"Bearer {OANDA_API_KEY}",
     "Content-Type": "application/json"
