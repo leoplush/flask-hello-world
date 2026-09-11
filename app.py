@@ -4,6 +4,7 @@ import json
 import os
 import time
 import threading
+import traceback
 
 app = Flask(__name__)
 
@@ -22,10 +23,16 @@ def get_current_price(pair):
     try:
         res = requests.get(url, headers=HEADERS, timeout=5)
         if res.status_code == 200:
-            prices = res.json()["prices"][0]
-            return float(prices["closeoutBid"]), float(prices["closeoutAsk"])
+            data = res.json()
+            if "prices" in data and len(data["prices"]) > 0:
+                prices = data["prices"][0]
+                return float(prices["closeoutBid"]), float(prices["closeoutAsk"])
+            else:
+                print(f"OANDA Pricing Error: La respuesta no contiene precios para {pair}. Respuesta: {data}")
+        else:
+            print(f"OANDA Pricing HTTP Error {res.status_code}: {res.text}")
     except Exception as e:
-        print(f"Error obteniendo precio: {e}")
+        print(f"Excepción obteniendo precio: {e}")
     return None, None
 
 def monitor_trade(trade_id, action, entry_price, initial_units, be_pips, tp1_pips, pair):
@@ -33,7 +40,6 @@ def monitor_trade(trade_id, action, entry_price, initial_units, be_pips, tp1_pip
     pip_value = 0.0001
     be_triggered = False
     tp1_triggered = False
-    current_units = initial_units
 
     print(f"Iniciando monitoreo para Trade ID {trade_id}...")
 
@@ -64,7 +70,7 @@ def monitor_trade(trade_id, action, entry_price, initial_units, be_pips, tp1_pip
 
         # 2. TAKE PROFIT 1 / CIERRE PARCIAL (8 PIPS)
         if pips_gained >= tp1_pips and not tp1_triggered:
-            close_units = str(abs(int(current_units / 2)))
+            close_units = str(abs(int(initial_units / 2)))
             url_close = f"{OANDA_URL}/v3/accounts/{OANDA_ACCOUNT_ID}/trades/{trade_id}/close"
             body_close = {"units": close_units}
             res = requests.put(url_close, headers=HEADERS, json=body_close)
@@ -99,6 +105,9 @@ def webhook():
             return jsonify({"status": "error", "message": "Failed to fetch market price from OANDA"}), 500
 
         pip_value = 0.0001
+        if sl_pips <= 0:
+            return jsonify({"status": "error", "message": "sl_pips must be greater than 0"}), 400
+
         units_calculated = int(risk_usd / (sl_pips * pip_value))
 
         if action == "BUY":
@@ -128,13 +137,16 @@ def webhook():
 
         url = f"{OANDA_URL}/v3/accounts/{OANDA_ACCOUNT_ID}/orders"
         response = requests.post(url, headers=HEADERS, json=order_body)
-        res_data = response.json()
+        
+        try:
+            res_data = response.json()
+        except Exception:
+            res_data = {"raw_text": response.text}
 
         if response.status_code in [200, 201]:
             trade_id = None
             fill_info = res_data.get("orderFillTransaction", {})
             
-            # Búsqueda segura de Trade ID
             if "tradeOpened" in fill_info:
                 trade_id = fill_info["tradeOpened"].get("tradeID")
             elif "tradesClosed" in fill_info and len(fill_info["tradesClosed"]) > 0:
@@ -150,10 +162,12 @@ def webhook():
 
             return jsonify({"status": "success", "action": action, "trade_id": trade_id, "units": units}), 200
         else:
+            print(f"OANDA Order Error Response: {res_data}")
             return jsonify({"status": "error", "details": res_data}), response.status_code
 
     except Exception as e:
-        print(f"Error procesando webhook: {e}")
+        error_trace = traceback.format_exc()
+        print(f"Error crítico procesando webhook:\n{error_trace}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
